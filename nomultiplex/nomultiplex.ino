@@ -39,11 +39,7 @@
 ////////////////////////
 // DEFINED CONSTANTS////
 ////////////////////////
-#define NUM_ROWS         4
-#define NUM_COLUMNS      4
-#define NUM_INPUTS       NUM_ROWS+NUM_COLUMNS     
-#define NUM_BUTTONS      NUM_ROWS * NUM_COLUMNS    
-
+#define NUM_STRIPS 8       
 #define SERIAL9600
 #include "settings.h"
 
@@ -54,21 +50,17 @@ typedef struct {
   byte pinNumber;
   int keyCode;
   int timePressed;
+  int color;
+  
+  float pressThreshold;
+  float releaseThreshold;
+  
   float movingAverage;
   boolean pressed;
   boolean prevPressed;
 } 
 MakeyMakeyInput;
-MakeyMakeyInput inputs[NUM_INPUTS];
-
-// create some buttons to keep track of LED states
-typedef struct {
-  boolean pressed;
-  boolean state;
-  boolean highlight;
-}
-Button;
-Button buttons [NUM_BUTTONS];
+MakeyMakeyInput inputs[NUM_STRIPS];
 
 ///////////////////////////////////
 // VARIABLES //////////////////////
@@ -76,24 +68,33 @@ Button buttons [NUM_BUTTONS];
 float movingAverageFactor = 1;
 byte inByte;
 
-float pressThreshold = 4.5;
-float releaseThreshold = 3.6;
+float pressThreshold[NUM_STRIPS] = {13, 13, 13, 13, 10, 17.5, 10, 12};
+float releaseThreshold[NUM_STRIPS] = {3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6};
 int triggerThresh = 200;
 boolean inputChanged;
 
-int pinNumbers[NUM_INPUTS] = {        
-  // Rows ///////////////////////// 
+int pinNumbers[NUM_STRIPS] = { 
   2,    
   3,    
   4,    
   5,      
-  // Columns ///////////////////////
-  9,     
-  8,     
+  6,     
   7,     
-  6     
+  8,     
+  9     
 };
 
+//Switches 1-8, pink, red, orange, yellow, green, blue, indigo, purple... 
+int stripColors[NUM_STRIPS] = {
+  0xF69CFB, // pink
+  0xFF0004, // red
+  0xFFA600, // orange
+  0xFFFF00, // yellow
+  0x09FF00, // green
+  0x00DDFF, // blue
+  0x0D00FF, // indigo
+  0xAA00FF // purple 
+};
 
 // LED that indicates when key is pressed
 const int outputK = 13;
@@ -104,6 +105,15 @@ int loopTime = 0;
 int prevTime = 0;
 int loopCounter = 0;
 
+/////////////////////////
+// NEOPIXELS ////////////
+/////////////////////////
+// http://learn.adafruit.com/adafruit-neopixel-uberguide/neomatrix-library
+// set the Neopixel pin to 0 - D0
+#define NEO_PIN 12
+#define NUM_NEOPIXELS 144
+#include <Adafruit_NeoPixel.h>
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_NEOPIXELS, NEO_PIN, NEO_GRB + NEO_KHZ800);
 
 ///////////////////////////
 // FUNCTIONS //////////////
@@ -145,7 +155,7 @@ void initializeArduino() {
   }
   /* Set up input pins 
    DEactivate the internal pull-ups, since we're using external resistors */
-  for (int i=0; i<NUM_INPUTS; i++)
+  for (int i=0; i<NUM_STRIPS; i++)
   {
     pinMode(pinNumbers[i], INPUT);
     digitalWrite(pinNumbers[i], LOW);
@@ -165,10 +175,14 @@ void initializeArduino() {
 ///////////////////////////
 void initializeInputs() {
 
-  for (int i=0; i<NUM_INPUTS; i++) {
+  for (int i=0; i<NUM_STRIPS; i++) {
     inputs[i].pinNumber = pinNumbers[i];
     inputs[i].keyCode = keyCodes[i];
     inputs[i].movingAverage = 0;
+    inputs[i].color = stripColors[i];
+    
+    inputs[i].pressThreshold = pressThreshold[i];
+    inputs[i].releaseThreshold = releaseThreshold[i];
     
     inputs[i].pressed = false;
     inputs[i].prevPressed = false;
@@ -186,30 +200,20 @@ void initializeInputs() {
 ///////////////////////////
 void updateInputStates() {
   inputChanged = false;
-  for (int i=0; i<NUM_INPUTS; i++) {
+  for (int i=0; i<NUM_STRIPS; i++) {
     inputs[i].prevPressed = inputs[i].pressed; // store previous pressed state (only used for mouse buttons)
     if (inputs[i].pressed) {
-      if (inputs[i].movingAverage < releaseThreshold) {  
+      if (inputs[i].movingAverage < inputs[i].releaseThreshold) {  
         inputChanged = true;
         inputs[i].pressed = false;
-               
-        
-        /* TODO - can we reset the entire column or row here rather than updating the entire monome?
-        One problem may be the fact that keys are constantly released- if, for example, another
-        key is triggered (holding two keys at once), it's possible that the key release is flickered
-        between the two keys. Effect: LED cell that flickers on/off rather than solid color.
-        */
-        
-        if(i< NUM_ROWS) resetRow(i);
-        else resetColumn(i);
-        updateMonome();
+        updateLorax();
       }
     } 
     else if (!inputs[i].pressed) {
-      if (inputs[i].movingAverage > pressThreshold) {  // input becomes pressed
+      if (inputs[i].movingAverage > inputs[i].pressThreshold) {  // input becomes pressed
         inputChanged = true;
         inputs[i].pressed = true; 
-        updateMonome(); 
+        updateLorax(); 
       }
     }
   }
@@ -222,82 +226,31 @@ void updateInputStates() {
 
 
 ///////////////////////////
-// UPDATE MONOME
+// UPDATE LORAX
 ///////////////////////////
-void updateMonome() {
-  for(int i=0; i< NUM_ROWS; i++) {
+void updateLorax() {
+  for(int i=0; i< NUM_STRIPS; i++) {
     if(inputs[i].pressed){
-      for(int j=0; j< NUM_COLUMNS; j++) {
-        // in original monome, input[0]-input[7] were rows, input[8]-input[15] were columns
-        if(inputs[j+ NUM_ROWS].pressed) {
-          int index = i*NUM_COLUMNS + j;
-          if (!buttons[index].pressed) {
-            if(!buttons[index].state) { 
-              buttons[index].state = true;
-#ifdef SERIAL9600 
-              // add 1 to differentiate index from 0 bytes of serial data
-              byte passVal = index+1;
-              Serial.write(passVal);
-#endif              
-#ifdef DEBUG_MONOME
-              Serial.print("button ");
-              Serial.print(index);
-              Serial.println(" ON");
-#endif
-            }
-            else {
-              buttons[index].state = false;
-              // updateNeopixels();
-#ifdef SERIAL9600  
-              byte passVal = index+1+NUM_BUTTONS;
-              Serial.write(passVal);
-#endif  
-#ifdef DEBUG_MONOME
-              Serial.print("button ");
-              Serial.print(index);
-              Serial.println(" OFF");
-#endif
-            }
-            buttons[index].pressed = true;
-          }
-        }
-      }
-    }
-  }
-}
-
-void resetRow(int rowNum) {
-  for(int i=(rowNum*NUM_COLUMNS); i<(rowNum*NUM_COLUMNS+NUM_COLUMNS); i++) {
-    buttons[i].pressed = false;
-  }
-}
-
-void resetColumn(int column) {
-  for(int i=column; i<NUM_COLUMNS; i++) {
-    buttons[i*NUM_COLUMNS+column].pressed = false;
-  }
-}
-
-void clearMonome() {
-  // clearNeopixels();
-  for(int i=0; i<NUM_BUTTONS; i++) {
-    buttons[i].state = false;
-    buttons[i].highlight = false;
-  }
-}
-
-void highlightColumn(int column) {
-  for (int i=0; i<NUM_COLUMNS; i++) {
-    // highlight the colum; buttons that are already on get a diff color
-    buttons[column+i*NUM_COLUMNS].highlight = true;
-    // turn off the column that was previously highlighted
-    if (column == 0) {
-       buttons[(NUM_COLUMNS-1)+i*NUM_COLUMNS].highlight = false;
+      byte passVal = i;
+      Serial.write(passVal);
+      updateNeopixelColor(inputs[i].color);
+      break;
     }
     else {
-      buttons[column-1+i*NUM_COLUMNS].highlight = false;
+      byte passVal = i+NUM_STRIPS;
+      Serial.write(passVal);
+      updateNeopixelColor(0);
     }
   }
+}
+
+  
+
+void updateNeopixelColor(int color) {
+  for(int i = 0; i < NUM_NEOPIXELS; i++) {
+    strip.setPixelColor(i, color);
+  }
+  strip.show();
 }
 
 ///////////////////////////
@@ -305,7 +258,7 @@ void highlightColumn(int column) {
 ///////////////////////////
 void updateOutLED() {
   boolean keyPressed = 0;
-  for (int i=0; i<NUM_INPUTS; i++) {
+  for (int i=0; i<NUM_STRIPS; i++) {
     if (inputs[i].pressed) {
         keyPressed = 1;
 #ifdef DEBUG
@@ -389,7 +342,7 @@ uint8_t readCapacitivePin(int pinToMeasure) {
 }
 
 void updateMovingAverage() {
-  for(int i = 0; i < NUM_INPUTS; i++) {
+  for(int i = 0; i < NUM_STRIPS; i++) {
     int cycles = readCapacitivePin(pinNumbers[i]);
     int mave = inputs[i].movingAverage;
     inputs[i].movingAverage = mave * (1.0 - movingAverageFactor) + cycles * movingAverageFactor;
