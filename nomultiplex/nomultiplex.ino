@@ -232,14 +232,18 @@ void updateLorax() {
   for(int i=0; i< NUM_STRIPS; i++) {
     if(inputs[i].pressed){
       byte passVal = i;
-      Serial.write(passVal);
+      //Serial.write(passVal);
+      Serial.print(i);
+      Serial.println(" should be on");
       updateNeopixelColor(inputs[i].color);
       break;
     }
     else {
       byte passVal = i+NUM_STRIPS;
-      Serial.write(passVal);
+      //Serial.write(passVal);
       updateNeopixelColor(0);
+      Serial.print(i);
+      Serial.println(" should be off");
     }
   }
 }
