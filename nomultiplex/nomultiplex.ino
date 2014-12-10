@@ -42,14 +42,6 @@ int pinNumbers[NUM_STRIPS] = {
 };
 
 
-// LED that indicates when key is pressed
-byte ledCycleCounter = 0;
-
-// timing
-int loopTime = 0;
-int prevTime = 0;
-int loopCounter = 0;
-
 /////////////////////////
 // NEOPIXELS ////////////
 /////////////////////////
