@@ -1,47 +1,16 @@
-/*
- ************************************************
- ****** SIMPLE CONDUCTIVE ARDUINO MONOME ********
- ************************************************
- MAKER
- Jenna deBoisblanc
- http://jdeboi.com
- start date: October 2014
- 
- DESCRIPTION
- My objective for this project was to build a monome- http://monome.org/ -
- (basically a programmable array of backlit buttons that's used
- to compose electronic music or mix video) using tools and processes 
- that were so simple, a third grader could build it.
- 
- This particular monome - currently setup as a 4x4 monome - can be made 
- with copper tape, jumpers, an Arduino Uno, and the monomeVisual 
- Processing sketch. It relies on capacitive sensors.
- 
- CREDIT
- Special thanks to Amanda Ghassaei, one of my best friends, for introducing
- me to monomes and the Maker Movement.
- 
- Code shout-outs:
- MaKey MaKey FIRMWARE v1.4.1
- by: Eric Rosenbaum, Jay Silver, and Jim Lindblom http://makeymakey.com
- Capacitive sensor code: http://playground.arduino.cc/Code/CapacitiveSensor
-*/
-
-/////////////////////////
-// DEBUG DEFINITIONS ////               
-/////////////////////////
-//#define DEBUG
-//#define DEBUG2 
-//#define DEBUG3 
-//#define DEBUG_TIMING
-//#define DEBUG_MONOME
-
 ////////////////////////
-// DEFINED CONSTANTS////
+// DEFINE THESE CONSTANTS////
 ////////////////////////
-#define NUM_STRIPS 8       
+#define NUM_STRIPS 4       
 #define SERIAL9600
-#include "settings.h"
+#define NEO_PIN 7
+#define NUM_NEOPIXELS 144
+
+int checkPin = 2;
+float pressThreshold[NUM_STRIPS] = {13, 13, 13, 13}; //, 10, 17.5, 10, 12};
+float releaseThreshold[NUM_STRIPS] = {3.6, 3.6, 3.6, 3.6};//, 3.6, 3.6, 3.6, 3.6};
+float movingAverageFactor = 1;
+const int outputK = 13;
 
 /////////////////////////
 // MAKEY MAKEY STRUCT ///
@@ -50,7 +19,6 @@ typedef struct {
   byte pinNumber;
   int keyCode;
   int timePressed;
-  int color;
   
   float pressThreshold;
   float releaseThreshold;
@@ -62,42 +30,19 @@ typedef struct {
 MakeyMakeyInput;
 MakeyMakeyInput inputs[NUM_STRIPS];
 
-///////////////////////////////////
-// VARIABLES //////////////////////
-///////////////////////////////////
-float movingAverageFactor = 1;
-byte inByte;
-
-float pressThreshold[NUM_STRIPS] = {13, 13, 13, 13, 10, 17.5, 10, 12};
-float releaseThreshold[NUM_STRIPS] = {3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6, 3.6};
-int triggerThresh = 200;
-boolean inputChanged;
-
 int pinNumbers[NUM_STRIPS] = { 
   2,    
   3,    
   4,    
-  5,      
-  6,     
-  7,     
-  8,     
-  9     
+  5      
+  //6,     
+  //7,     
+  //8,     
+  //9     
 };
 
-//Switches 1-8, pink, red, orange, yellow, green, blue, indigo, purple... 
-int stripColors[NUM_STRIPS] = {
-  0xF69CFB, // pink
-  0xFF0004, // red
-  0xFFA600, // orange
-  0xFFFF00, // yellow
-  0x09FF00, // green
-  0x00DDFF, // blue
-  0x0D00FF, // indigo
-  0xAA00FF // purple 
-};
 
 // LED that indicates when key is pressed
-const int outputK = 13;
 byte ledCycleCounter = 0;
 
 // timing
@@ -110,8 +55,6 @@ int loopCounter = 0;
 /////////////////////////
 // http://learn.adafruit.com/adafruit-neopixel-uberguide/neomatrix-library
 // set the Neopixel pin to 0 - D0
-#define NEO_PIN 12
-#define NUM_NEOPIXELS 144
 #include <Adafruit_NeoPixel.h>
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_NEOPIXELS, NEO_PIN, NEO_GRB + NEO_KHZ800);
 
@@ -122,7 +65,6 @@ void initializeArduino();
 void initializeInputs();
 void updateMovingAverage();
 void updateInputStates();
-void addDelay();
 void updateOutLED();
 
 //////////////////////
@@ -130,9 +72,11 @@ void updateOutLED();
 //////////////////////
 void setup() 
 {
+  strip.begin();
   initializeArduino();
   initializeInputs();
   delay(100);
+  
 }
 
 ////////////////////
@@ -163,11 +107,6 @@ void initializeArduino() {
   
   pinMode(outputK, OUTPUT);
   digitalWrite(outputK, LOW);
-
-
-#ifdef DEBUG
-  delay(4000); // allow us time to reprogram in case things are freaking out
-#endif
 }
 
 ///////////////////////////
@@ -177,9 +116,7 @@ void initializeInputs() {
 
   for (int i=0; i<NUM_STRIPS; i++) {
     inputs[i].pinNumber = pinNumbers[i];
-    inputs[i].keyCode = keyCodes[i];
     inputs[i].movingAverage = 0;
-    inputs[i].color = stripColors[i];
     
     inputs[i].pressThreshold = pressThreshold[i];
     inputs[i].releaseThreshold = releaseThreshold[i];
@@ -199,62 +136,33 @@ void initializeInputs() {
 // UPDATE INPUT STATES
 ///////////////////////////
 void updateInputStates() {
-  inputChanged = false;
   for (int i=0; i<NUM_STRIPS; i++) {
-    inputs[i].prevPressed = inputs[i].pressed; // store previous pressed state (only used for mouse buttons)
-    if (inputs[i].pressed) {
-      if (inputs[i].movingAverage < inputs[i].releaseThreshold) {  
-        inputChanged = true;
-        inputs[i].pressed = false;
-        updateLorax();
-      }
-    } 
-    else if (!inputs[i].pressed) {
       if (inputs[i].movingAverage > inputs[i].pressThreshold) {  // input becomes pressed
-        inputChanged = true;
-        inputs[i].pressed = true; 
-        updateLorax(); 
+        inputs[i].pressed = true;
+        if(i == checkPin) {
+          Serial.print(checkPin);
+          Serial.print(" is on and is ");
+          Serial.println(inputs[i].movingAverage);
+        }
       }
-    }
-  }
-#ifdef DEBUG3
-  if (inputChanged) {
-    Serial.println("change");
-  }
-#endif
-}
-
-
-///////////////////////////
-// UPDATE LORAX
-///////////////////////////
-void updateLorax() {
-  for(int i=0; i< NUM_STRIPS; i++) {
-    if(inputs[i].pressed){
-      byte passVal = i;
-      //Serial.write(passVal);
-      Serial.print(i);
-      Serial.println(" should be on");
-      updateNeopixelColor(inputs[i].color);
-      break;
-    }
-    else {
-      byte passVal = i+NUM_STRIPS;
-      //Serial.write(passVal);
-      updateNeopixelColor(0);
-      Serial.print(i);
-      Serial.println(" should be off");
-    }
+      else if (inputs[i].movingAverage < inputs[i].releaseThreshold) {
+        inputs[i].pressed = false;
+        if(i == checkPin) {
+          Serial.print(checkPin);
+          Serial.print(" is off and is ");
+          Serial.println(inputs[i].movingAverage);
+        }
+      }
   }
 }
 
-  
 
-void updateNeopixelColor(int color) {
+void setColor(int R, int G, int B) {
   for(int i = 0; i < NUM_NEOPIXELS; i++) {
-    strip.setPixelColor(i, color);
+    strip.setPixelColor(i, strip.Color(R, G, B));
   }
   strip.show();
+  delay(50);
 }
 
 ///////////////////////////
@@ -264,7 +172,8 @@ void updateOutLED() {
   boolean keyPressed = 0;
   for (int i=0; i<NUM_STRIPS; i++) {
     if (inputs[i].pressed) {
-        keyPressed = 1;
+        keyPressed = i+1;
+        
 #ifdef DEBUG
         Serial.print("Key ");
         Serial.print(i);
@@ -273,11 +182,25 @@ void updateOutLED() {
     }
   }
 
-  if (keyPressed) {
+  if (keyPressed == 1) {
     digitalWrite(outputK, HIGH);
+    setColor(0,155,100);
+  }
+  else if (keyPressed == 2) {
+    digitalWrite(outputK, HIGH);
+    setColor(155,0,100);
+  }
+  else if (keyPressed == 3) {
+    digitalWrite(outputK, HIGH);
+    setColor(55,70,200);
+  }
+  else if (keyPressed == 4) {
+    digitalWrite(outputK, HIGH);
+    setColor(255,100,100);
   }
   else {       
     digitalWrite(outputK, LOW);
+    setColor(0,0,0);
   }
 }
 

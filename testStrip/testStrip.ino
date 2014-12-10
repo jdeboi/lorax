@@ -9,7 +9,7 @@
 
 
 //ADJUST//////////////////////
-int pinToMeasure = 2;
+int pinToMeasure = 3;
 float movingAverageFactor = 1.0;
 //////////////////////////////
 
@@ -17,6 +17,7 @@ float movingAverage = 0;
 
 
 void setup() {
+  Serial.begin(9600);
   pinMode(pinToMeasure, INPUT);  
 }
 
