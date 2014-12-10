@@ -43,9 +43,9 @@ void loop() {
   else {
     Serial.print(distance);
     Serial.println(" cm");
-    setColor(Wheel(map(distance, 0, 255, 0, 200)));
+    setColor(Wheel(map(distance, 0, 200, 0, 255)));
   }
-  delay(500);
+  delay(100);
 }
 
 void setColor(int R, int G, int B) {
