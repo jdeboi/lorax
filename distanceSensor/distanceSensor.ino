@@ -3,12 +3,19 @@
 #define led 11
 #define led2 10
 
+#define NEO_PIN 7
+#define NUM_NEOPIXELS 144
+#include <Adafruit_NeoPixel.h>
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_NEOPIXELS, NEO_PIN, NEO_GRB + NEO_KHZ800);
+
+
 void setup() {
   Serial.begin (9600);
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
   pinMode(led, OUTPUT);
   pinMode(led2, OUTPUT);
+  strip.begin();
 }
 
 void loop() {
@@ -31,10 +38,40 @@ void loop() {
   }
   if (distance >= 200 || distance <= 0){
     Serial.println("Out of range");
+    setColor(0,0,0);
   }
   else {
     Serial.print(distance);
     Serial.println(" cm");
+    setColor(Wheel(map(distance, 0, 255, 0, 200)));
   }
   delay(500);
+}
+
+void setColor(int R, int G, int B) {
+  for(int i = 0; i < NUM_NEOPIXELS; i++) {
+    strip.setPixelColor(i, strip.Color(R, G, B));
+  }
+  strip.show();
+  delay(50);
+}
+
+void setColor(uint32_t c) {
+  for(int i = 0; i < NUM_NEOPIXELS; i++) {
+    strip.setPixelColor(i, c);
+  }
+  strip.show();
+  delay(50);
+}
+
+uint32_t Wheel(byte WheelPos) {
+  if(WheelPos < 85) {
+   return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+  } else if(WheelPos < 170) {
+   WheelPos -= 85;
+   return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+  } else {
+   WheelPos -= 170;
+   return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+  }
 }
